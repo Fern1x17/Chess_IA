@@ -42,3 +42,10 @@ class Board:
     def result(self):
         """Devuelve el resultado de la partida: '1-0', '0-1' o '1/2-1/2'"""
         return self.board.result()
+
+    @property
+    def fullmove_number(self):
+        return self.board.fullmove_number
+
+    def piece_at(self, square):
+        return self.board.piece_at(square)
