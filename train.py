@@ -56,5 +56,5 @@ class Trainer:
 
 
 if __name__ == "__main__":
-    trainer = Trainer(depth=2, games=200)
+    trainer = Trainer(depth=1, games=100000)
     trainer.train()
