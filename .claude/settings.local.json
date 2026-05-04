@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(pip install *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(inkscape --version)",
+      "Bash(rsvg-convert --version)"
     ]
   }
 }

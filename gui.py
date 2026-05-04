@@ -2,6 +2,9 @@ import pygame
 import chess
 import threading
 import sys
+import io
+import os
+import cairosvg
 from minimax import Minimax
 
 # ── Layout ────────────────────────────────────────────────────────────────────
@@ -29,20 +32,22 @@ C_BTN_TXT    = (255, 245, 220)
 C_TITLE      = (255, 230, 140)
 C_SUB        = (180, 160, 110)
 
-# ── Piece symbols (fallback letters) ─────────────────────────────────────────
-PIECE_LETTER = {
-    chess.PAWN: 'P', chess.KNIGHT: 'N', chess.BISHOP: 'B',
-    chess.ROOK: 'R', chess.QUEEN:  'Q', chess.KING:   'K',
-}
+# ── SVG sprite names ──────────────────────────────────────────────────────────
+_SVG_DIR = os.path.join(os.path.dirname(__file__), 'pieces-basic-svg')
 
-# Unicode chess symbols as preferred display
-PIECE_UNICODE = {
-    (chess.PAWN,   chess.WHITE): '♙', (chess.PAWN,   chess.BLACK): '♟',
-    (chess.KNIGHT, chess.WHITE): '♘', (chess.KNIGHT, chess.BLACK): '♞',
-    (chess.BISHOP, chess.WHITE): '♗', (chess.BISHOP, chess.BLACK): '♝',
-    (chess.ROOK,   chess.WHITE): '♖', (chess.ROOK,   chess.BLACK): '♜',
-    (chess.QUEEN,  chess.WHITE): '♕', (chess.QUEEN,  chess.BLACK): '♛',
-    (chess.KING,   chess.WHITE): '♔', (chess.KING,   chess.BLACK): '♚',
+_SVG_NAME = {
+    (chess.PAWN,   chess.WHITE): 'pawn-w',
+    (chess.PAWN,   chess.BLACK): 'pawn-b',
+    (chess.KNIGHT, chess.WHITE): 'knight-w',
+    (chess.KNIGHT, chess.BLACK): 'knight-b',
+    (chess.BISHOP, chess.WHITE): 'bishop-w',
+    (chess.BISHOP, chess.BLACK): 'bishop-b',
+    (chess.ROOK,   chess.WHITE): 'rook-w',
+    (chess.ROOK,   chess.BLACK): 'rook-b',
+    (chess.QUEEN,  chess.WHITE): 'queen-w',
+    (chess.QUEEN,  chess.BLACK): 'queen-b',
+    (chess.KING,   chess.WHITE): 'king-w',
+    (chess.KING,   chess.BLACK): 'king-b',
 }
 
 
@@ -66,63 +71,24 @@ def screen_to_sq(px, py):
     return chess.square(col, rank)
 
 
-# ── Font loader ───────────────────────────────────────────────────────────────
-def _load_piece_font(size):
-    candidates = [
-        'notosans', 'dejavusans', 'dejavuserif', 'symbola',
-        'unifont', 'freesans', 'liberationsans', 'arial',
-    ]
-    available = pygame.font.get_fonts()
-    for name in candidates:
-        if name in available:
-            f = pygame.font.SysFont(name, size, bold=False)
-            # Quick test: render a chess glyph and see if it's not a box
-            surf = f.render('♙', True, (0, 0, 0))
-            if surf.get_width() > 5:
-                return f, True   # (font, unicode_works)
-    return pygame.font.SysFont(None, size, bold=True), False
-
-
-# ── Piece surface cache ───────────────────────────────────────────────────────
+# ── SVG sprite loader ─────────────────────────────────────────────────────────
 _piece_cache = {}
 
-def _get_piece_surf(piece, use_unicode, piece_font, letter_font, scale=1.0):
-    key = (piece.piece_type, piece.color, scale)
+def _load_svg_surf(piece_type, color, size):
+    key = (piece_type, color, size)
     if key in _piece_cache:
         return _piece_cache[key]
-
-    size = int(SQ * scale)
-    surf = pygame.Surface((size, size), pygame.SRCALPHA)
-    cx, cy = size // 2, size // 2
-    r = size // 2 - 5
-
-    if piece.color == chess.WHITE:
-        bg, fg, border = (255, 248, 220), (30, 25, 15), (90, 70, 35)
-    else:
-        bg, fg, border = (45, 38, 28), (225, 210, 175), (140, 110, 65)
-
-    # drop shadow
-    shadow = pygame.Surface((size, size), pygame.SRCALPHA)
-    pygame.draw.circle(shadow, (0, 0, 0, 60), (cx + 3, cy + 4), r)
-    surf.blit(shadow, (0, 0))
-
-    pygame.draw.circle(surf, border, (cx, cy), r + 2)
-    pygame.draw.circle(surf, bg,     (cx, cy), r)
-    # subtle inner highlight
-    pygame.draw.circle(surf, (*[min(255, c + 30) for c in bg],), (cx - r//5, cy - r//5), r//3)
-
-    if use_unicode:
-        glyph = PIECE_UNICODE[(piece.piece_type, piece.color)]
-        txt = piece_font.render(glyph, True, fg)
-    else:
-        glyph = PIECE_LETTER[piece.piece_type]
-        txt = letter_font.render(glyph, True, fg)
-
-    tr = txt.get_rect(center=(cx, cy + 1))
-    surf.blit(txt, tr)
-
+    name = _SVG_NAME[(piece_type, color)]
+    path = os.path.join(_SVG_DIR, f'{name}.svg')
+    png_bytes = cairosvg.svg2png(url=path, output_width=size, output_height=size)
+    surf = pygame.image.load(io.BytesIO(png_bytes), '.png').convert_alpha()
     _piece_cache[key] = surf
     return surf
+
+
+def _get_piece_surf(piece, use_unicode=None, piece_font=None, letter_font=None, scale=1.0):
+    size = int(SQ * scale)
+    return _load_svg_surf(piece.piece_type, piece.color, size)
 
 
 # ── Board drawing ─────────────────────────────────────────────────────────────
@@ -132,7 +98,7 @@ def draw_board(screen, selected_sq, last_move, legal_targets, capture_targets):
             sq = chess.square(file, rank)
             x = LABEL_W + file * SQ
             y = (7 - rank) * SQ
-            light = (rank + file) % 2 == 0
+            light = (rank + file) % 2 == 1
 
             # Base colour
             if sq == selected_sq:
@@ -175,20 +141,19 @@ def draw_board(screen, selected_sq, last_move, legal_targets, capture_targets):
         screen.blit(ring_surf, (x, y))
 
 
-def draw_pieces(screen, board, dragging_sq, drag_pos,
-                use_unicode, piece_font, letter_font):
+def draw_pieces(screen, board, dragging_sq, drag_pos):
     for sq, piece in board.piece_map().items():
         if sq == dragging_sq:
             continue
         x, y = sq_to_screen(sq)
-        surf = _get_piece_surf(piece, use_unicode, piece_font, letter_font)
+        surf = _get_piece_surf(piece)
         screen.blit(surf, (x, y))
 
     # Draw dragged piece on top, centered on mouse
     if dragging_sq is not None:
         piece = board.piece_at(dragging_sq)
         if piece:
-            surf = _get_piece_surf(piece, use_unicode, piece_font, letter_font, scale=1.08)
+            surf = _get_piece_surf(piece, scale=1.08)
             sz = surf.get_width()
             screen.blit(surf, (drag_pos[0] - sz // 2, drag_pos[1] - sz // 2))
 
@@ -291,7 +256,7 @@ def welcome_screen(screen, clock, fonts):
 
 
 # ── Game screen ───────────────────────────────────────────────────────────────
-def game_screen(screen, clock, fonts, use_unicode, piece_font, letter_font):
+def game_screen(screen, clock, fonts):
     board = chess.Board()
     ai = Minimax(depth=4)
 
@@ -439,8 +404,7 @@ def game_screen(screen, clock, fonts, use_unicode, piece_font, letter_font):
         # ── Draw ──────────────────────────────────────────────────────────
         screen.fill(C_BG)
         draw_board(screen, selected_sq, last_move, legal_targets, capture_targets)
-        draw_pieces(screen, board, dragging_sq, drag_pos,
-                    use_unicode, piece_font, letter_font)
+        draw_pieces(screen, board, dragging_sq, drag_pos)
         draw_panel(screen, board, status_msg, ai_thinking, fonts)
 
         pygame.display.flip()
@@ -454,10 +418,6 @@ def main():
     pygame.display.set_caption('Ajedrez IA')
     clock = pygame.time.Clock()
 
-    # Load fonts
-    piece_font, use_unicode = _load_piece_font(int(SQ * 0.78))
-    letter_font = pygame.font.SysFont('arial', int(SQ * 0.46), bold=True)
-
     fonts = {
         'title':  pygame.font.SysFont('arial', 62, bold=True),
         'btn':    pygame.font.SysFont('arial', 28, bold=True),
@@ -468,7 +428,7 @@ def main():
     while True:
         welcome_screen(screen, clock, fonts)
         _piece_cache.clear()
-        game_screen(screen, clock, fonts, use_unicode, piece_font, letter_font)
+        game_screen(screen, clock, fonts)
 
 
 if __name__ == '__main__':
